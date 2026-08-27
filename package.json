@@ -1,0 +1,23 @@
+{
+  "name": "buscador-bug",
+  "version": "1.0.0",
+  "description": "Experimento de coleta de dados da Amazon Brasil",
+  "type": "module",
+  "main": "src/test-amazon.js",
+  "scripts": {
+    "start": "node src/test-amazon.js",
+    "monitor": "node src/continuous-runner.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.4",
+    "cheerio": "^1.0.0",
+    "dotenv": "^17.4.2",
+    "playwright": "^1.62.1"
+  },
+  "devDependencies": {
+    "supabase": "^2.116.0"
+  }
+}
