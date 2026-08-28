@@ -203,3 +203,88 @@ export async function collectAmazonProducts(searchTerm, pageNumber = 1) {
     await browser.close();
   }
 }
+
+/**
+ * Coleta detalhes de um único produto da Amazon (Nome e Preço).
+ * @param {import('playwright').Page} page
+ * @param {string} url
+ * @returns {Promise<{ name: string, price: number|null, rawPrice: string, isBlocked: boolean, isUnavailable: boolean }>}
+ */
+export async function collectAmazonProductDetails(page, url) {
+  const response = await page.goto(url, {
+    waitUntil: 'domcontentloaded',
+    timeout: 30000
+  });
+
+  const title = await page.title();
+  const htmlContent = await page.content();
+
+  // Verificação de CAPTCHA/Bloqueio
+  const isBlocked = htmlContent.includes('captcha') || 
+                    htmlContent.includes('api-services-support@amazon.com') ||
+                    htmlContent.includes('bm-verify') ||
+                    htmlContent.includes('triggerInterstitialChallenge') ||
+                    title.includes('Robot') ||
+                    (response && response.status() === 503);
+
+  if (isBlocked) {
+    return { name: '', price: null, rawPrice: '', isBlocked: true, isUnavailable: false };
+  }
+
+  // Verificação de indisponibilidade
+  const isUnavailable = htmlContent.includes('Não disponível no momento') || 
+                        htmlContent.includes('Sem estoque') || 
+                        htmlContent.includes('out of stock') ||
+                        htmlContent.includes('Não temos previsão de quando ou se este produto estará disponível');
+
+  // Extrai nome e preço da página
+  const extracted = await page.evaluate(() => {
+    const titleEl = document.querySelector('#productTitle');
+    const name = titleEl ? titleEl.textContent.trim() : '';
+
+    // Seletores de preço em ordem de prioridade
+    let priceText = '';
+    const selectors = [
+      '#corePriceDisplay_desktop_feature_div .a-price .a-offscreen',
+      '#corePrice_feature_div .a-price .a-offscreen',
+      '.priceToPay .a-offscreen',
+      '#price_inside_buybox',
+      '.apexPriceToPay .a-offscreen',
+      '#priceblock_ourprice',
+      '#priceblock_dealprice',
+      'span[data-a-color="price"] .a-offscreen'
+    ];
+
+    for (const selector of selectors) {
+      const priceEl = document.querySelector(selector);
+      if (priceEl && priceEl.textContent.trim()) {
+        priceText = priceEl.textContent.trim();
+        break;
+      }
+    }
+
+    if (!priceText) {
+      // Fallback para whole e fraction
+      const wholeEl = document.querySelector('.priceToPay .a-price-whole') || 
+                      document.querySelector('#corePriceDisplay_desktop_feature_div .a-price-whole');
+      const fractionEl = document.querySelector('.priceToPay .a-price-fraction') || 
+                         document.querySelector('#corePriceDisplay_desktop_feature_div .a-price-fraction');
+      if (wholeEl) {
+        priceText = 'R$ ' + wholeEl.textContent.trim() + (fractionEl ? ',' + fractionEl.textContent.trim() : '');
+      }
+    }
+
+    return { name, priceText };
+  });
+
+  const parsedPrice = parseBrazilianPrice(extracted.priceText);
+
+  return {
+    name: extracted.name,
+    price: parsedPrice,
+    rawPrice: extracted.priceText,
+    isBlocked: false,
+    isUnavailable: isUnavailable && parsedPrice === null
+  };
+}
+

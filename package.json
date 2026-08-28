@@ -7,7 +7,8 @@
   "scripts": {
     "start": "node src/test-amazon.js",
     "monitor": "node src/continuous-runner.js",
-    "discovery": "node src/continuous-discovery-runner.js"
+    "discovery": "node src/continuous-discovery-runner.js",
+    "monitor:direct": "node src/continuous-amazon-monitor.js"
   },
   "keywords": [],
   "author": "",
