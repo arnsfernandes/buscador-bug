@@ -56,7 +56,8 @@ export async function collectKaBuMProducts(searchTerm, pageNumber = 1, existingP
       return { products: [], rawCount: 0, discarded: [] };
     }
 
-    const dataObj = JSON.parse(nextData.props.pageProps.data);
+    const rawData = nextData.props.pageProps.data;
+    const dataObj = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
     const rawProducts = dataObj.catalogServer?.data || [];
 
     const products = [];
