@@ -319,7 +319,8 @@ export async function runAmazonMonitor({ limit = null, mockTelegram = false } = 
                 asin: prod.external_id,
                 name: details.name || prod.name,
                 price: details.price,
-                url: canonicalUrl
+                url: canonicalUrl,
+                imageUrl: details.imageUrl
               };
 
               const result = await upsertProduct(upsertData, 'amazon');

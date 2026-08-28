@@ -107,9 +107,20 @@ export async function upsertProduct(product, store = 'amazon') {
     };
 
     if (product.imageUrl) {
-      if (product.imageUrl !== existing.image_url) {
-        updateFields.image_url = product.imageUrl;
-        updateFields.telegram_file_id = null;
+      const getAmazonImageSize = (url) => {
+        if (!url) return 0;
+        const match = url.match(/_(?:SL|UL|SR|SZ|US|SX|SY|UX|UY)(\d+)/i);
+        return match ? parseInt(match[1], 10) : 9999;
+      };
+
+      const newSize = getAmazonImageSize(product.imageUrl);
+      const existingSize = getAmazonImageSize(existing.image_url);
+
+      if (!existing.image_url || newSize >= existingSize) {
+        if (product.imageUrl !== existing.image_url) {
+          updateFields.image_url = product.imageUrl;
+          updateFields.telegram_file_id = null;
+        }
       }
     }
 

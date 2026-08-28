@@ -227,10 +227,13 @@ export async function collectAmazonProducts(searchTerm, pageNumber = 1, existing
  * @returns {Promise<{ name: string, price: number|null, rawPrice: string, isBlocked: boolean, isUnavailable: boolean }>}
  */
 export async function collectAmazonProductDetails(page, url) {
-  const response = await page.goto(url, {
-    waitUntil: 'domcontentloaded',
-    timeout: 30000
-  });
+  let response = null;
+  if (url !== 'about:blank') {
+    response = await page.goto(url, {
+      waitUntil: 'domcontentloaded',
+      timeout: 30000
+    });
+  }
 
   const title = await page.title();
   const htmlContent = await page.content();
@@ -310,8 +313,35 @@ export async function collectAmazonProductDetails(page, url) {
     const imgEl = document.querySelector('#landingImage') || 
                   document.querySelector('#imgBlkFront') || 
                   document.querySelector('#main-image');
-    const imageUrl = imgEl ? (imgEl.getAttribute('data-old-hires') || imgEl.getAttribute('src') || '') : '';
-
+    
+    let imageUrl = '';
+    if (imgEl) {
+      imageUrl = imgEl.getAttribute('data-old-hires') || '';
+      
+      if (!imageUrl) {
+        const dynamicAttr = imgEl.getAttribute('data-a-dynamic-image');
+        if (dynamicAttr) {
+          try {
+            const parsed = JSON.parse(dynamicAttr);
+            let maxArea = 0;
+            for (const [url, dims] of Object.entries(parsed)) {
+              if (Array.isArray(dims) && dims.length >= 2) {
+                const area = dims[0] * dims[1];
+                if (area > maxArea) {
+                  maxArea = area;
+                  imageUrl = url;
+                }
+              }
+            }
+          } catch (e) {}
+        }
+      }
+      
+      if (!imageUrl) {
+        imageUrl = imgEl.getAttribute('src') || '';
+      }
+    }
+ 
     return { name, priceText, originalPriceText, imageUrl };
   });
 
