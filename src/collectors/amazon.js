@@ -138,7 +138,10 @@ export async function collectAmazonProducts(searchTerm, pageNumber = 1, existing
           }
         }
 
-        return { asin, name, price, url: productUrl };
+        const imgEl = el.querySelector('img.s-image');
+        const imageUrl = imgEl ? (imgEl.getAttribute('src') || '') : '';
+
+        return { asin, name, price, url: productUrl, imageUrl };
       });
     });
 
@@ -189,7 +192,8 @@ export async function collectAmazonProducts(searchTerm, pageNumber = 1, existing
         asin: item.asin,
         name: item.name,
         price: parsedPrice,
-        url: cleanUrl
+        url: cleanUrl,
+        imageUrl: item.imageUrl || null
       };
 
       // 5. Verificar duplicidades por ASIN
@@ -303,7 +307,12 @@ export async function collectAmazonProductDetails(page, url) {
       }
     }
 
-    return { name, priceText, originalPriceText };
+    const imgEl = document.querySelector('#landingImage') || 
+                  document.querySelector('#imgBlkFront') || 
+                  document.querySelector('#main-image');
+    const imageUrl = imgEl ? (imgEl.getAttribute('data-old-hires') || imgEl.getAttribute('src') || '') : '';
+
+    return { name, priceText, originalPriceText, imageUrl };
   });
 
   const parsedPrice = parseBrazilianPrice(extracted.priceText);
@@ -313,6 +322,7 @@ export async function collectAmazonProductDetails(page, url) {
     name: extracted.name,
     price: parsedPrice,
     originalPrice: parsedOriginalPrice,
+    imageUrl: extracted.imageUrl || null,
     rawPrice: extracted.priceText,
     isBlocked: false,
     isUnavailable: isUnavailable && parsedPrice === null

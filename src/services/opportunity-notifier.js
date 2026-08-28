@@ -1,4 +1,4 @@
-import { sendTelegramMessage } from './telegram.js';
+import { sendTelegramMessage, sendTelegramPhoto } from './telegram.js';
 
 /**
  * Formata um valor numérico como moeda brasileira (BRL).
@@ -79,6 +79,14 @@ export async function checkAndNotifyOpportunity(upsertResult) {
       ]
     ]
   };
+
+  if (data.image_url) {
+    try {
+      return await sendTelegramPhoto(data.image_url, message, replyMarkup);
+    } catch (err) {
+      console.warn(`[TELEGRAM-FALLBACK] Erro ao enviar foto (${data.image_url}): ${err.message}. Fazendo fallback para texto.`);
+    }
+  }
 
   return await sendTelegramMessage(message, replyMarkup);
 }

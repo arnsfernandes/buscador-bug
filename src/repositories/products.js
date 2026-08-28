@@ -68,7 +68,8 @@ export async function upsertProduct(product, store = 'amazon') {
         availability_status: 'active',
         consecutive_unavailable: 0,
         last_available_at: nowStr,
-        last_opportunity_level: currentLevel
+        last_opportunity_level: currentLevel,
+        image_url: product.imageUrl || null
       })
       .select()
       .single();
@@ -103,6 +104,10 @@ export async function upsertProduct(product, store = 'amazon') {
       consecutive_unavailable: 0,
       last_available_at: nowStr
     };
+
+    if (product.imageUrl) {
+      updateFields.image_url = product.imageUrl;
+    }
 
     if (hasPriceChanged) {
       updateFields.previous_price = existing.current_price;
