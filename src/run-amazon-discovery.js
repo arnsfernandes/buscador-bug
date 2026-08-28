@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import { collectAmazonProducts } from './collectors/amazon.js';
 import { upsertProduct, supabase } from './repositories/products.js';
+import { isConnectorActive, listDiscoveryTerms } from './repositories/config.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -26,13 +27,37 @@ export const ALL_TERMS = Object.values(SEARCH_CATEGORIES).flat();
  * @param {number} options.pagesPerRun Páginas para percorrer por termo nesta rodada
  * @returns {Promise<Object>} Resumo dos resultados por termo
  */
-export async function runAmazonDiscovery({ terms = ALL_TERMS, pagesPerRun = PAGES_PER_RUN } = {}) {
+export async function runAmazonDiscovery({ terms = null, pagesPerRun = PAGES_PER_RUN } = {}) {
+  // 0. Verificar se o conector está ativo
+  if (!(await isConnectorActive(SOURCE))) {
+    console.log(`[INFO] Conector "${SOURCE}" está inativo no banco de dados. Pulando execução da descoberta.`);
+    return {};
+  }
+
+  // 1. Obter termos ativos do banco se não for fornecida lista customizada
+  let termsToProcess = terms;
+  if (!termsToProcess) {
+    try {
+      const dbTerms = await listDiscoveryTerms(SOURCE);
+      termsToProcess = dbTerms.filter(t => t.active).map(t => t.search_term);
+      console.log(`[INFO] Carregados ${termsToProcess.length} termos ativos do banco de dados.`);
+    } catch (err) {
+      console.error('Erro ao carregar termos ativos do banco:', err.message);
+      termsToProcess = ALL_TERMS;
+    }
+  }
+
   console.log('=== INICIANDO DESCOBERTA MULTI-TERMOS AMAZON ===');
   console.log(`Hora de início: ${new Date().toLocaleString()}`);
-  console.log(`Total de termos na lista: ${terms.length}\n`);
+  console.log(`Total de termos na lista: ${termsToProcess.length}\n`);
 
   const startTime = Date.now();
   const summary = {};
+
+  if (termsToProcess.length === 0) {
+    console.log('[INFO] Nenhum termo ativo para processar.');
+    return {};
+  }
 
   // 1. Inicializa o browser único de controle de ciclo
   const browser = await chromium.launch({ headless: true, timeout: 15000 });
@@ -44,7 +69,7 @@ export async function runAmazonDiscovery({ terms = ALL_TERMS, pagesPerRun = PAGE
   let page = await context.newPage();
 
   try {
-    for (const term of terms) {
+    for (const term of termsToProcess) {
       console.log(`\n============================================================`);
       console.log(`👉 Processando termo: "${term}"`);
       console.log(`============================================================`);

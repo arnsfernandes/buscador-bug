@@ -1,6 +1,7 @@
 import { chromium } from 'playwright';
 import { collectAmazonProductDetails } from './collectors/amazon.js';
 import { upsertProduct, registerProductUnavailability, supabase } from './repositories/products.js';
+import { isConnectorActive } from './repositories/config.js';
 import { checkAndNotifyOpportunity } from './services/opportunity-notifier.js';
 import dotenv from 'dotenv';
 
@@ -139,6 +140,21 @@ export function getProductPriorityAndEligibility(prod, now = new Date()) {
  * @returns {Promise<Object>} Estatísticas da execução
  */
 export async function runAmazonMonitor({ limit = null, mockTelegram = false } = {}) {
+  // 0. Verificar se o conector está ativo
+  if (!(await isConnectorActive('amazon'))) {
+    console.log('[INFO] Conector "amazon" está inativo no banco de dados. Pulando execução do monitoramento.');
+    return {
+      total: 0,
+      success: 0,
+      unavailable: 0,
+      blocked: 0,
+      navigationError: 0,
+      unexpectedError: 0,
+      durations: [],
+      failures: []
+    };
+  }
+
   console.log('=== INICIANDO MONITORAMENTO DIRETO AMAZON ===');
   console.log(`Hora de início: ${new Date().toLocaleString()}`);
   console.log(`Mocando Telegram: ${mockTelegram ? 'SIM' : 'NÃO'}\n`);
