@@ -67,10 +67,15 @@ export async function checkAndNotifyOpportunity(upsertResult) {
                   `🏪 ${storeName}\n` +
                   `🕐 ${brTime}`;
 
+  let productUrl = data.url;
+  if (data.store === 'amazon' && data.external_id) {
+    productUrl = `https://www.amazon.com.br/dp/${data.external_id}`;
+  }
+
   const replyMarkup = {
     inline_keyboard: [
       [
-        { text: 'ABRIR PRODUTO', url: data.url }
+        { text: 'ABRIR PRODUTO', url: productUrl }
       ]
     ]
   };

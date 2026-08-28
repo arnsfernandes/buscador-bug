@@ -31,6 +31,11 @@ export async function upsertProduct(product, store = 'amazon') {
     throw new Error('Produto inválido para upsert. Todos os campos são obrigatórios.');
   }
 
+  let canonicalUrl = url;
+  if (store === 'amazon' && asin) {
+    canonicalUrl = `https://www.amazon.com.br/dp/${asin}`;
+  }
+
   // 1. Verificar se o produto já existe
   const { data: existing, error: selectError } = await supabase
     .from('products')
@@ -54,7 +59,7 @@ export async function upsertProduct(product, store = 'amazon') {
         store,
         external_id: asin,
         name,
-        url,
+        url: canonicalUrl,
         current_price: price,
         previous_price: null,
         reference_price: price,
@@ -92,7 +97,7 @@ export async function upsertProduct(product, store = 'amazon') {
 
     const updateFields = {
       name,
-      url,
+      url: canonicalUrl,
       last_checked_at: nowStr,
       availability_status: 'active',
       consecutive_unavailable: 0,
