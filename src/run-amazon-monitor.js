@@ -63,6 +63,22 @@ export function getProductPriorityAndEligibility(prod, now = new Date()) {
     };
   }
 
+  if (prod.availability_status === 'inactive') {
+    const delayMinutes = 10080; // 7 dias
+    const referenceTime = prod.last_unavailable_at ? new Date(prod.last_unavailable_at) : new Date(prod.last_checked_at || 0);
+    const timeSinceMs = now.getTime() - referenceTime.getTime();
+    const isEligible = timeSinceMs >= delayMinutes * 60 * 1000;
+    
+    return {
+      priority: 'LOW',
+      priorityRank: 1,
+      isEligible,
+      delayMinutes,
+      timeSinceCheckedMs: timeSinceMs,
+      reason: `Produto inativo (última indisponibilidade há ${(timeSinceMs / (60000 * 1440)).toFixed(1)} dias, elegível a cada 7 dias)`
+    };
+  }
+
   const currentPrice = Number(prod.current_price || 0);
   const referencePrice = Number(prod.reference_price || 0);
 

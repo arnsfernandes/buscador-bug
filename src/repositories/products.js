@@ -191,7 +191,21 @@ export async function registerProductUnavailability(asin, store = 'amazon') {
 
   const nowStr = new Date().toISOString();
   const nextFailures = (existing.consecutive_unavailable || 0) + 1;
-  const status = nextFailures >= 3 ? 'temporarily_unavailable' : (existing.availability_status || 'active');
+  
+  let status = existing.availability_status || 'active';
+  if (nextFailures >= 3) {
+    status = 'temporarily_unavailable';
+    
+    // Calcular dias desde o último sucesso de preço (ou first_seen_at)
+    const referenceTimeStr = existing.last_available_at || existing.first_seen_at || nowStr;
+    const referenceTime = new Date(referenceTimeStr);
+    const msSinceAvailable = Date.now() - referenceTime.getTime();
+    const daysSinceAvailable = msSinceAvailable / (1000 * 60 * 60 * 24);
+
+    if (daysSinceAvailable >= 7) {
+      status = 'inactive';
+    }
+  }
 
   const { data: updated, error: updateError } = await supabase
     .from('products')
