@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import { runKaBuMMonitor } from './run-kabum-monitor.js';
 import { registerSuccess, registerFailure } from './repositories/service-health.js';
+import { saveCrawlerCycleLog, getCrawlerTuningState } from './repositories/crawler-tuning.js';
 
 dotenv.config();
 
@@ -10,6 +11,15 @@ const intervalMs = intervalMinutes * 60 * 1000;
 console.log('=== RUNNER CONTÍNUO DO NOVO MONITOR DIRETO KABUM! ===');
 console.log(`- Intervalo entre ciclos: ${intervalMinutes} minuto(s) (${intervalMs} ms)`);
 console.log(`- Pressione Ctrl+C para encerrar com segurança.\n`);
+
+// Carregar estado de tuning no startup
+try {
+  console.log('[STARTUP] Recuperando estado atual de auto-tuning do crawler...');
+  const tuningState = await getCrawlerTuningState('kabum');
+  console.log('[STARTUP] Estado recuperado:', tuningState);
+} catch (tuningErr) {
+  console.error('[STARTUP] Falha ao carregar estado de tuning:', tuningErr.message);
+}
 
 let isRunning = false;
 let loopTimeout = null;
@@ -81,6 +91,27 @@ async function executeCycle() {
         console.log(`  - Target de revisita: ${targetRevisitMin} min`);
         console.log(`  - Sleep calculado: ${(sleepMs / 1000).toFixed(1)}s (${sleepMin.toFixed(2)} min)`);
         console.log(`  - Intervalo efetivo estimado: ${effectiveIntervalMin.toFixed(2)} min`);
+
+        // Salvar log do ciclo de forma assíncrona
+        if (stats) {
+          saveCrawlerCycleLog({
+            store: 'kabum',
+            startedAt: new Date(cycleStartTime),
+            finishedAt: new Date(),
+            durationSec: durationSec,
+            totalProcessed: stats.total || 0,
+            successCount: stats.success || 0,
+            errorCount: (stats.unexpectedError || 0) + (stats.navigationError || 0),
+            wafCount: stats.blocked || 0,
+            httpDirectCount: stats.usedHttp || 0,
+            fallbackPlaywrightCount: stats.usedFallback || 0,
+            targetRevisitMinutes: targetRevisitMin
+          }).then(() => {
+            console.log(`[LOOP-MONITOR-KABUM] Métricas do ciclo salvas no banco de dados.`);
+          }).catch(logErr => {
+            console.error('[LOOP-MONITOR-KABUM] Falha ao salvar log de ciclo no banco:', logErr.message);
+          });
+        }
 
         const nextRunTime = new Date(Date.now() + sleepMs);
         console.log(`Próxima execução agendada para: ${nextRunTime.toLocaleString()}`);
