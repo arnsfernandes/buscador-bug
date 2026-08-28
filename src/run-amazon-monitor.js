@@ -243,17 +243,33 @@ export async function runAmazonMonitor({ limit = null, mockTelegram = false } = 
   try {
     for (let w = 0; w < activeWorkersCount; w++) {
       workers.push((async (workerId) => {
-        const page = await context.newPage();
+        let page = await context.newPage();
+        let productsProcessed = 0;
         try {
           while (true) {
             // Pega o próximo produto da lista de forma atômica/síncrona (JS single-thread nos gaps de async)
             const index = currentIndex++;
             if (index >= products.length) break;
 
+            // Recriar a página a cada 50 produtos para expurgar cache/DOM e registrar memória
+            if (productsProcessed > 0 && productsProcessed % 50 === 0) {
+              const memory = process.memoryUsage();
+              const rssMb = (memory.rss / 1024 / 1024).toFixed(2);
+              const heapUsedMb = (memory.heapUsed / 1024 / 1024).toFixed(2);
+              console.log(`[Worker ${workerId}][MEMÓRIA] Processados ${productsProcessed} itens. RSS: ${rssMb} MB | Heap: ${heapUsedMb} MB. Recriando página...`);
+              try {
+                await page.close();
+              } catch (closeErr) {
+                console.error(`[Worker ${workerId}][ERRO] Falha ao fechar página:`, closeErr.message);
+              }
+              page = await context.newPage();
+            }
+
+            productsProcessed++;
             const prod = products[index];
             const prodStartTime = Date.now();
 
-            // Construção da URL canônica pelo ASIN (external_id) com fallback para a URL salva
+            // Construção da URL canônica pelo ASIN (external_id) with fallback para a URL salva
             const canonicalUrl = prod.external_id 
               ? `https://www.amazon.com.br/dp/${prod.external_id}` 
               : prod.url;
