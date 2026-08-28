@@ -6,7 +6,8 @@
   "main": "src/test-amazon.js",
   "scripts": {
     "start": "node src/test-amazon.js",
-    "monitor": "node src/continuous-runner.js"
+    "monitor": "node src/continuous-runner.js",
+    "discovery": "node src/continuous-discovery-runner.js"
   },
   "keywords": [],
   "author": "",

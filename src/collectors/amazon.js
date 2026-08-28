@@ -63,8 +63,14 @@ export function normalizeAmazonUrl(rawUrl, asin) {
  * @param {string} searchTerm Termo a ser pesquisado.
  * @returns {Promise<{ products: Array, rawCount: number, discarded: Array }>}
  */
-export async function collectAmazonProducts(searchTerm) {
-  const url = `https://www.amazon.com.br/s?k=${encodeURIComponent(searchTerm)}`;
+export async function collectAmazonProducts(searchTerm, pageNumber = 1) {
+  const urlObj = new URL('https://www.amazon.com.br/s');
+  urlObj.searchParams.set('k', searchTerm);
+  if (pageNumber > 1) {
+    urlObj.searchParams.set('page', pageNumber.toString());
+  }
+  const url = urlObj.toString();
+
   
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
