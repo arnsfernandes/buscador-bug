@@ -9,6 +9,8 @@
     "monitor": "node src/continuous-runner.js",
     "discovery": "node src/continuous-discovery-runner.js",
     "monitor:direct": "node src/continuous-amazon-monitor.js",
+    "monitor:kabum": "node src/continuous-kabum-monitor.js",
+    "discovery:kabum": "node src/continuous-kabum-discovery.js",
     "bot": "node src/telegram-bot.js"
   },
   "keywords": [],
