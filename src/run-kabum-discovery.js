@@ -28,21 +28,7 @@ export async function runKaBuMDiscovery({ terms = null, pagesPerRun = PAGES_PER_
   let termsToProcess = terms;
   if (!termsToProcess) {
     try {
-      let dbTerms = await listDiscoveryTerms(SOURCE);
-      if (dbTerms.length === 0) {
-        console.log('[INFO] Nenhum termo de descoberta para a KaBuM!. Inicializando a partir dos termos ativos da Amazon...');
-        const amazonTerms = await listDiscoveryTerms('amazon');
-        const activeAmazon = amazonTerms.filter(t => t.active);
-        for (const t of activeAmazon) {
-          try {
-            await createDiscoveryTerm(SOURCE, t.search_term);
-            console.log(`  - Criado termo "${t.search_term}" para KaBuM!`);
-          } catch (e) {
-            console.error(`  - Falha ao clonar termo "${t.search_term}":`, e.message);
-          }
-        }
-        dbTerms = await listDiscoveryTerms(SOURCE);
-      }
+      const dbTerms = await listDiscoveryTerms(SOURCE);
       termsToProcess = dbTerms.filter(t => t.active).map(t => t.search_term);
       console.log(`[INFO] Carregados ${termsToProcess.length} termos ativos da KaBuM!.`);
     } catch (err) {
