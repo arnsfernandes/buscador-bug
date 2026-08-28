@@ -51,7 +51,12 @@ export async function checkAndNotifyOpportunity(upsertResult) {
     return null;
   }
 
-  const storeName = data.store ? data.store.charAt(0).toUpperCase() + data.store.slice(1) : 'Amazon';
+  let storeName = 'Amazon';
+  if (data.store === 'kabum') {
+    storeName = 'KaBuM!';
+  } else if (data.store) {
+    storeName = data.store.charAt(0).toUpperCase() + data.store.slice(1);
+  }
   
   const brTime = new Intl.DateTimeFormat('pt-BR', {
     timeZone: 'America/Sao_Paulo',
@@ -74,6 +79,8 @@ export async function checkAndNotifyOpportunity(upsertResult) {
   let productUrl = data.url;
   if (data.store === 'amazon' && data.external_id) {
     productUrl = `https://www.amazon.com.br/dp/${data.external_id}`;
+  } else if (data.store === 'kabum' && data.external_id) {
+    productUrl = `https://www.kabum.com.br/produto/${data.external_id}`;
   }
 
   const replyMarkup = {

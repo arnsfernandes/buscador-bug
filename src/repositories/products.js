@@ -34,6 +34,8 @@ export async function upsertProduct(product, store = 'amazon') {
   let canonicalUrl = url;
   if (store === 'amazon' && asin) {
     canonicalUrl = `https://www.amazon.com.br/dp/${asin}`;
+  } else if (store === 'kabum' && asin) {
+    canonicalUrl = `https://www.kabum.com.br/produto/${asin}`;
   }
 
   // 1. Verificar se o produto já existe
@@ -107,14 +109,23 @@ export async function upsertProduct(product, store = 'amazon') {
     };
 
     if (product.imageUrl) {
-      const getAmazonImageSize = (url) => {
+      const getImageSize = (url) => {
         if (!url) return 0;
-        const match = url.match(/_(?:SL|UL|SR|SZ|US|SX|SY|UX|UY)(\d+)/i);
-        return match ? parseInt(match[1], 10) : 9999;
+        if (store === 'amazon') {
+          const match = url.match(/_(?:SL|UL|SR|SZ|US|SX|SY|UX|UY)(\d+)/i);
+          return match ? parseInt(match[1], 10) : 9999;
+        } else if (store === 'kabum') {
+          if (url.includes('_gg.jpg') || url.includes('_original.jpg')) return 4;
+          if (url.includes('_g.jpg')) return 3;
+          if (url.includes('_m.jpg')) return 2;
+          if (url.includes('_p.jpg')) return 1;
+          return 0;
+        }
+        return 9999;
       };
 
-      const newSize = getAmazonImageSize(product.imageUrl);
-      const existingSize = getAmazonImageSize(existing.image_url);
+      const newSize = getImageSize(product.imageUrl);
+      const existingSize = getImageSize(existing.image_url);
 
       if (!existing.image_url || newSize >= existingSize) {
         if (product.imageUrl !== existing.image_url) {
