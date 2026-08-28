@@ -3,6 +3,7 @@ import { collectKaBuMProductDetails } from './collectors/kabum.js';
 import { upsertProduct, registerProductUnavailability, supabase } from './repositories/products.js';
 import { isConnectorActive } from './repositories/config.js';
 import { getProductPriorityAndEligibility } from './run-amazon-monitor.js';
+import { checkAndNotifyOpportunity } from './services/opportunity-notifier.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -202,7 +203,8 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
 
               const result = await upsertProduct(upsertData, SOURCE);
               if (result.shouldAlert) {
-                console.log(`  🔔 [OPORTUNIDADE] Nível: ${result.data?.last_opportunity_level.toUpperCase()} detectado.`);
+                console.log(`  🔔 [OPORTUNIDADE] Nível: ${result.data?.last_opportunity_level.toUpperCase()} detectado. Enviando Telegram...`);
+                await checkAndNotifyOpportunity(result.data);
               }
 
             } catch (err) {
