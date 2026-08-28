@@ -60,13 +60,16 @@ export async function checkAndNotifyOpportunity(upsertResult) {
     hour12: false
   }).format(new Date());
 
+  let productName = data.name || '';
+  if (productName.length > 120) {
+    productName = productName.substring(0, 117) + '...';
+  }
+
   const message = `${header}\n\n` +
-                  `<b>${data.name}</b>\n\n` +
-                  `💰 Referência: ${formatBRL(referencePrice)}\n` +
-                  `🔥 Agora: <b>${formatBRL(currentPrice)}</b>\n` +
+                  `<b>${productName}</b>\n\n` +
+                  `💰 De ${formatBRL(referencePrice)} por <b>${formatBRL(currentPrice)}</b>\n` +
                   `📉 Queda: <b>${dropPct}%</b>\n\n` +
-                  `🏪 ${storeName}\n` +
-                  `🕐 ${brTime}`;
+                  `🏪 ${storeName} • 🕐 ${brTime}`;
 
   let productUrl = data.url;
   if (data.store === 'amazon' && data.external_id) {
