@@ -141,7 +141,7 @@ export async function runKaBuMDiscovery({ terms = null, pagesPerRun = PAGES_PER_
                 originalPrice: prod.originalPrice
               };
 
-              const res = await upsertProduct(upsertData, SOURCE);
+              const res = await upsertProduct(upsertData, SOURCE, true);
               if (res.status === 'inserted') {
                 summary[term].new++;
               } else {

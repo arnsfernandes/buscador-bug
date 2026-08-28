@@ -24,7 +24,7 @@ export const supabase = createClient(supabaseUrl || '', supabaseServiceKey || ''
  * @param {string} [store='amazon']
  * @returns {Promise<Object>} O registro salvo ou atualizado.
  */
-export async function upsertProduct(product, store = 'amazon') {
+export async function upsertProduct(product, store = 'amazon', isDiscovery = false) {
   const { asin, name, price, url } = product;
 
   if (!asin || !name || price === undefined || price === null || !url) {
@@ -66,7 +66,8 @@ export async function upsertProduct(product, store = 'amazon') {
         previous_price: null,
         reference_price: price,
         first_seen_at: nowStr,
-        last_checked_at: nowStr,
+        last_checked_at: isDiscovery ? new Date(0).toISOString() : nowStr,
+        last_discovered_at: nowStr,
         availability_status: 'active',
         consecutive_unavailable: 0,
         last_available_at: nowStr,
@@ -102,11 +103,16 @@ export async function upsertProduct(product, store = 'amazon') {
     const updateFields = {
       name,
       url: canonicalUrl,
-      last_checked_at: nowStr,
       availability_status: 'active',
       consecutive_unavailable: 0,
       last_available_at: nowStr
     };
+
+    if (isDiscovery) {
+      updateFields.last_discovered_at = nowStr;
+    } else {
+      updateFields.last_checked_at = nowStr;
+    }
 
     if (product.imageUrl) {
       const getImageSize = (url) => {

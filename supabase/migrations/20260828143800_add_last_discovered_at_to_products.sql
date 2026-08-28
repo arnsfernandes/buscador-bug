@@ -1,0 +1,1 @@
+ALTER TABLE products ADD COLUMN last_discovered_at TIMESTAMP WITH TIME ZONE;

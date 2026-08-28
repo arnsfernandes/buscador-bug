@@ -170,7 +170,7 @@ export async function runAmazonDiscovery({ terms = null, pagesPerRun = PAGES_PER
           let pageInsertedCount = 0;
           for (const prod of newProducts) {
             try {
-              const res = await upsertProduct(prod, SOURCE);
+              const res = await upsertProduct(prod, SOURCE, true);
               if (res.status === 'inserted') {
                 pageInsertedCount++;
               }
