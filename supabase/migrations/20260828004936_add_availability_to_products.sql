@@ -1,0 +1,5 @@
+ALTER TABLE products 
+ADD COLUMN IF NOT EXISTS availability_status TEXT DEFAULT 'active',
+ADD COLUMN IF NOT EXISTS consecutive_unavailable INTEGER DEFAULT 0,
+ADD COLUMN IF NOT EXISTS last_unavailable_at TIMESTAMPTZ,
+ADD COLUMN IF NOT EXISTS last_available_at TIMESTAMPTZ;

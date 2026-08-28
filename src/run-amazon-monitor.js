@@ -1,6 +1,6 @@
 import { chromium } from 'playwright';
 import { collectAmazonProductDetails } from './collectors/amazon.js';
-import { upsertProduct, supabase } from './repositories/products.js';
+import { upsertProduct, registerProductUnavailability, supabase } from './repositories/products.js';
 import { checkAndNotifyOpportunity } from './services/opportunity-notifier.js';
 import dotenv from 'dotenv';
 
@@ -47,6 +47,22 @@ export async function getAmazonProductsFromDb() {
  * @returns {Object}
  */
 export function getProductPriorityAndEligibility(prod, now = new Date()) {
+  if (prod.availability_status === 'temporarily_unavailable') {
+    const delayMinutes = 360; // 6 horas
+    const referenceTime = prod.last_unavailable_at ? new Date(prod.last_unavailable_at) : new Date(prod.last_checked_at || 0);
+    const timeSinceMs = now.getTime() - referenceTime.getTime();
+    const isEligible = timeSinceMs >= delayMinutes * 60 * 1000;
+    
+    return {
+      priority: 'LOW',
+      priorityRank: 1,
+      isEligible,
+      delayMinutes,
+      timeSinceCheckedMs: timeSinceMs,
+      reason: `Produto temporariamente indisponível (última indisponibilidade há ${(timeSinceMs / 60000).toFixed(1)} minutos, elegível a cada 6 horas)`
+    };
+  }
+
   const currentPrice = Number(prod.current_price || 0);
   const referencePrice = Number(prod.reference_price || 0);
 
@@ -227,12 +243,22 @@ export async function runAmazonMonitor({ limit = null, mockTelegram = false } = 
               if (details.isUnavailable) {
                 stats.unavailable++;
                 console.log(`  ⚠️ [Worker ${workerId}][INDISPONÍVEL] Produto sem estoque ou indisponível.`);
+                try {
+                  await registerProductUnavailability(prod.external_id, 'amazon');
+                } catch (dbErr) {
+                  console.error(`  ❌ Erro ao registrar indisponibilidade no banco:`, dbErr.message);
+                }
                 continue;
               }
 
               if (details.price === null) {
                 stats.unavailable++;
                 console.log(`  ⚠️ [Worker ${workerId}][PREÇO NÃO ENCONTRADO] Nome: "${details.name.substring(0, 40)}..." (Preço retornado: "${details.rawPrice || 'N/A'}")`);
+                try {
+                  await registerProductUnavailability(prod.external_id, 'amazon');
+                } catch (dbErr) {
+                  console.error(`  ❌ Erro ao registrar indisponibilidade no banco:`, dbErr.message);
+                }
                 continue;
               }
 

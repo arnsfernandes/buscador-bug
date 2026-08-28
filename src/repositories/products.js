@@ -58,7 +58,10 @@ export async function upsertProduct(product, store = 'amazon') {
         previous_price: null,
         reference_price: price,
         first_seen_at: nowStr,
-        last_checked_at: nowStr
+        last_checked_at: nowStr,
+        availability_status: 'active',
+        consecutive_unavailable: 0,
+        last_available_at: nowStr
       })
       .select()
       .single();
@@ -88,7 +91,10 @@ export async function upsertProduct(product, store = 'amazon') {
     const updateFields = {
       name,
       url,
-      last_checked_at: nowStr
+      last_checked_at: nowStr,
+      availability_status: 'active',
+      consecutive_unavailable: 0,
+      last_available_at: nowStr
     };
 
     if (hasPriceChanged) {
@@ -160,4 +166,48 @@ export async function upsertProduct(product, store = 'amazon') {
       shouldAlert
     };
   }
+}
+
+/**
+ * Registra a indisponibilidade de um produto (quando o preço não é encontrado ou produto está sem estoque).
+ * Incrementa consecutive_unavailable e, se atingir 3 consecutivos, atualiza o status para 'temporarily_unavailable'.
+ * @param {string} asin ASIN do produto
+ * @param {string} [store='amazon'] Loja
+ * @returns {Promise<Object|null>} Registro atualizado ou null se não encontrado
+ */
+export async function registerProductUnavailability(asin, store = 'amazon') {
+  const { data: existing, error: selectError } = await supabase
+    .from('products')
+    .select('*')
+    .eq('store', store)
+    .eq('external_id', asin)
+    .maybeSingle();
+
+  if (selectError) {
+    throw new Error(`Erro ao buscar produto para indisponibilidade: ${selectError.message}`);
+  }
+
+  if (!existing) return null;
+
+  const nowStr = new Date().toISOString();
+  const nextFailures = (existing.consecutive_unavailable || 0) + 1;
+  const status = nextFailures >= 3 ? 'temporarily_unavailable' : (existing.availability_status || 'active');
+
+  const { data: updated, error: updateError } = await supabase
+    .from('products')
+    .update({
+      consecutive_unavailable: nextFailures,
+      last_unavailable_at: nowStr,
+      availability_status: status,
+      last_checked_at: nowStr
+    })
+    .eq('id', existing.id)
+    .select()
+    .single();
+
+  if (updateError) {
+    throw new Error(`Erro ao atualizar indisponibilidade do produto: ${updateError.message}`);
+  }
+
+  return updated;
 }
