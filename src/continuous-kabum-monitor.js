@@ -70,12 +70,21 @@ async function executeCycle() {
         process.exit(0);
       } else {
         const durationSec = stats ? (Date.now() - cycleStartTime) / 1000 : 0;
-        const nextIntervalMin = stats ? calculateAdaptiveInterval(stats, durationSec) : 1;
-        const nextIntervalMs = nextIntervalMin * 60 * 1000;
+        const targetRevisitMin = stats ? calculateAdaptiveInterval(stats, durationSec) : 1;
+        const durationMin = durationSec / 60;
+        const sleepMin = Math.max(0, targetRevisitMin - durationMin);
+        const sleepMs = sleepMin * 60 * 1000;
+        const effectiveIntervalMin = durationMin + sleepMin;
 
-        const nextRunTime = new Date(Date.now() + nextIntervalMs);
-        console.log(`Próxima execução agendada para: ${nextRunTime.toLocaleString()} (Intervalo adaptativo: ${nextIntervalMin} min)`);
-        loopTimeout = setTimeout(executeCycle, nextIntervalMs);
+        console.log(`[ADAPTATIVE-FREQ] Agendamento do próximo ciclo:`);
+        console.log(`  - Duração do ciclo: ${durationSec.toFixed(1)}s (${durationMin.toFixed(2)} min)`);
+        console.log(`  - Target de revisita: ${targetRevisitMin} min`);
+        console.log(`  - Sleep calculado: ${(sleepMs / 1000).toFixed(1)}s (${sleepMin.toFixed(2)} min)`);
+        console.log(`  - Intervalo efetivo estimado: ${effectiveIntervalMin.toFixed(2)} min`);
+
+        const nextRunTime = new Date(Date.now() + sleepMs);
+        console.log(`Próxima execução agendada para: ${nextRunTime.toLocaleString()}`);
+        loopTimeout = setTimeout(executeCycle, sleepMs);
       }
     }
   }
@@ -124,7 +133,7 @@ export function calculateAdaptiveInterval(stats, durationSec) {
   const failureRate = totalProcessed > 0 ? failures / totalProcessed : 0;
   const fallbackRate = totalProcessed > 0 ? (stats.usedFallback || 0) / totalProcessed : 0;
 
-  console.log(`[ADAPTATIVE-FREQ] Calculando próximo intervalo adaptativo (Fórmula Otimizada):`);
+  console.log(`[ADAPTATIVE-FREQ] Calculando alvo de revisita (Fórmula Real Decoplada):`);
   console.log(`  - Catálogo total KaBuM!: ${catalogCount} produtos`);
   console.log(`  - Processados no ciclo: ${totalProcessed} produtos`);
   console.log(`  - Duração do ciclo: ${durationSec.toFixed(1)}s`);
@@ -132,33 +141,26 @@ export function calculateAdaptiveInterval(stats, durationSec) {
   console.log(`  - Taxa de fallbacks Playwright: ${(fallbackRate * 100).toFixed(1)}%`);
   console.log(`  - Prioridades: P3 (High/BUG): ${stats.priority3Count || 0} | P2 (Medium): ${stats.priority2Count || 0} | P1 (Low): ${stats.priority1Count || 0}`);
 
-  // 1. Base inicial curta para catálogo pequeno e saudável (1 minuto)
-  let subtotal = 1;
+  // 1. Target base saudável (1 minuto)
+  let target = 1;
 
-  // 2. Penalidade por tamanho de catálogo (+1 minuto por 1.000 itens)
-  const catalogPenalty = Math.floor(catalogCount / 1000);
+  // 2. Proteção secundária por tamanho de catálogo (+1 minuto a cada 5.000 produtos)
+  const catalogPenalty = Math.floor(catalogCount / 5000);
   if (catalogPenalty > 0) {
-    subtotal += catalogPenalty;
-    console.log(`  -> Penalidade por tamanho de catálogo (+1 min por 1.000 prods): +${catalogPenalty} min.`);
+    target += catalogPenalty;
+    console.log(`  -> Proteção de Catálogo (+1 min por 5.000 prods): +${catalogPenalty} min.`);
   }
 
-  // 3. Penalidade por duração longa do ciclo (+1 minuto por 3 minutos/180s de execução)
-  const durationPenalty = Math.floor(durationSec / 180);
-  if (durationPenalty > 0) {
-    subtotal += durationPenalty;
-    console.log(`  -> Penalidade por duração longa do ciclo (+1 min por 3 min de execução): +${durationPenalty} min.`);
-  }
-
-  // 4. Prioridade Extra (Desconto de tempo se houver itens com queda de preço ativa)
+  // 3. Prioridade Extra (Desconto de tempo se houver itens com queda de preço ativa)
   if ((stats.priority3Count || 0) > 0) {
-    subtotal = Math.max(1, subtotal - 2);
+    target = Math.max(1, target - 2);
     console.log(`  -> Prioridade Extra (P3 > 0): Desconto de -2 minutos aplicado.`);
   } else if ((stats.priority2Count || 0) > 0) {
-    subtotal = Math.max(1, subtotal - 1);
+    target = Math.max(1, target - 1);
     console.log(`  -> Prioridade Extra (P2 > 0): Desconto de -1 minuto aplicado.`);
   }
 
-  // 5. Cooldown forte e progressivo por WAF/Erros ou Fallbacks
+  // 4. Cooldown forte e progressivo por WAF/Erros ou Fallbacks
   const instabilityFactor = Math.max(failureRate, fallbackRate);
   let multiplier = 1;
 
@@ -176,11 +178,11 @@ export function calculateAdaptiveInterval(stats, durationSec) {
     console.log(`  -> Cooldown Leve (instabilidade > 5%): Multiplicador x1.5.`);
   }
 
-  let finalIntervalMin = Math.round(subtotal * multiplier);
+  let finalTargetRevisit = Math.round(target * multiplier);
 
-  // 6. Aplicar limites rígidos (mínimo de 1 minuto, máximo de 30 minutos)
-  finalIntervalMin = Math.max(1, Math.min(30, finalIntervalMin));
-  console.log(`  -> [RESULTADO] Intervalo adaptativo final definido em: ${finalIntervalMin} minuto(s).`);
+  // 5. Aplicar limites rígidos (mínimo de 1 minuto, máximo de 30 minutos)
+  finalTargetRevisit = Math.max(1, Math.min(30, finalTargetRevisit));
+  console.log(`  -> [RESULTADO] Alvo de revisita (Target) definido em: ${finalTargetRevisit} minuto(s).`);
 
-  return finalIntervalMin;
+  return finalTargetRevisit;
 }
