@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
 import { runAmazonDiscovery } from './run-amazon-discovery.js';
 
+import { registerSuccess, registerFailure } from './repositories/service-health.js';
+
 // Carrega variáveis do arquivo .env
 dotenv.config();
 
@@ -36,10 +38,25 @@ async function executeLoop() {
     console.log(`------------------------------------------------------------`);
     console.log(`[LOOP-DESCOBERTA] Ciclo finalizado com sucesso. Duração: ${duration}s.`);
     console.log(`------------------------------------------------------------`);
+
+    // Registra sucesso do ciclo
+    try {
+      await registerSuccess('amazon-discovery');
+    } catch (dbErr) {
+      console.error('[LOOP-DESCOBERTA] Falha ao registrar sucesso na tabela de saúde:', dbErr.message);
+    }
+
   } catch (error) {
     console.error(`------------------------------------------------------------`);
     console.error(`[LOOP-DESCOBERTA] ERRO NO CICLO:`, error.stack || error.message);
     console.error(`------------------------------------------------------------`);
+
+    // Registra falha do ciclo
+    try {
+      await registerFailure('amazon-discovery', error.message || String(error));
+    } catch (dbErr) {
+      console.error('[LOOP-DESCOBERTA] Falha ao registrar falha na tabela de saúde:', dbErr.message);
+    }
   } finally {
     isRunning = false;
     if (!shutdownSignaled) {

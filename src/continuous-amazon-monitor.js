@@ -1,6 +1,8 @@
 import dotenv from 'dotenv';
 import { runAmazonMonitor } from './run-amazon-monitor.js';
 
+import { registerSuccess, registerFailure } from './repositories/service-health.js';
+
 dotenv.config();
 
 const intervalMinutes = parseFloat(process.env.MONITOR_INTERVAL_MINUTES || '1');
@@ -44,10 +46,24 @@ async function executeCycle() {
     console.log(`  - Falhas (Bloqueios/Navegação/Inesperados): ${stats.blocked + stats.navigationError + stats.unexpectedError}`);
     console.log(`------------------------------------------------------------`);
 
+    // Registra sucesso do ciclo
+    try {
+      await registerSuccess('amazon-monitor');
+    } catch (dbErr) {
+      console.error('[LOOP-MONITOR] Falha ao registrar sucesso na tabela de saúde:', dbErr.message);
+    }
+
   } catch (error) {
     console.error(`------------------------------------------------------------`);
     console.error(`[LOOP-MONITOR] ERRO NO CICLO:`, error.stack || error.message);
     console.error(`------------------------------------------------------------`);
+
+    // Registra falha do ciclo
+    try {
+      await registerFailure('amazon-monitor', error.message || String(error));
+    } catch (dbErr) {
+      console.error('[LOOP-MONITOR] Falha ao registrar falha na tabela de saúde:', dbErr.message);
+    }
   } finally {
     isRunning = false;
     if (!shutdownSignaled) {
