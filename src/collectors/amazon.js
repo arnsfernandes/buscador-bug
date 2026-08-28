@@ -63,7 +63,21 @@ export function normalizeAmazonUrl(rawUrl, asin) {
  * @param {string} searchTerm Termo a ser pesquisado.
  * @returns {Promise<{ products: Array, rawCount: number, discarded: Array }>}
  */
-export async function collectAmazonProducts(searchTerm, pageNumber = 1) {
+export async function collectAmazonProducts(searchTerm, pageNumber = 1, existingPage = null) {
+  let page = existingPage;
+  let browser = null;
+  let context = null;
+
+  if (!page) {
+    browser = await chromium.launch({ headless: true, timeout: 15000 });
+    context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      locale: 'pt-BR',
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    });
+    page = await context.newPage();
+  }
+
   const urlObj = new URL('https://www.amazon.com.br/s');
   urlObj.searchParams.set('k', searchTerm);
   if (pageNumber > 1) {
@@ -71,20 +85,10 @@ export async function collectAmazonProducts(searchTerm, pageNumber = 1) {
   }
   const url = urlObj.toString();
 
-  
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 800 },
-    locale: 'pt-BR',
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  });
-
-  const page = await context.newPage();
-
   try {
     const response = await page.goto(url, {
       waitUntil: 'domcontentloaded',
-      timeout: 30000
+      timeout: 20000
     });
 
     const title = await page.title();
@@ -103,7 +107,7 @@ export async function collectAmazonProducts(searchTerm, pageNumber = 1) {
     }
 
     // Extrai os elementos do DOM de forma síncrona no contexto do navegador
-    const rawItems = await page.evaluate(() => {
+    const evaluatePromise = page.evaluate(() => {
       const elements = Array.from(document.querySelectorAll('div[data-asin]'));
       return elements.map(el => {
         const asin = el.getAttribute('data-asin')?.trim();
@@ -137,6 +141,12 @@ export async function collectAmazonProducts(searchTerm, pageNumber = 1) {
         return { asin, name, price, url: productUrl };
       });
     });
+
+    // Timeout de segurança de 15 segundos para o evaluate
+    const rawItems = await Promise.race([
+      evaluatePromise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout de 15 segundos na extração dos dados da página.')), 15000))
+    ]);
 
     const rawCount = rawItems.length;
     const productsMap = new Map(); // Para deduzir duplicidades por ASIN
@@ -198,9 +208,11 @@ export async function collectAmazonProducts(searchTerm, pageNumber = 1) {
     };
 
   } finally {
-    await page.close();
-    await context.close();
-    await browser.close();
+    if (!existingPage) {
+      if (page) await page.close();
+      if (context) await context.close();
+      if (browser) await browser.close();
+    }
   }
 }
 
