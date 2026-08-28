@@ -47,6 +47,7 @@ export async function upsertProduct(product, store = 'amazon') {
 
   if (!existing) {
     // 2. Produto novo: Inserir em 'products'
+    const currentLevel = detectOpportunity(price, price, product.originalPrice);
     const { data: inserted, error: insertError } = await supabase
       .from('products')
       .insert({
@@ -61,7 +62,8 @@ export async function upsertProduct(product, store = 'amazon') {
         last_checked_at: nowStr,
         availability_status: 'active',
         consecutive_unavailable: 0,
-        last_available_at: nowStr
+        last_available_at: nowStr,
+        last_opportunity_level: currentLevel
       })
       .select()
       .single();
@@ -83,7 +85,7 @@ export async function upsertProduct(product, store = 'amazon') {
       throw new Error(`Erro ao inserir preço inicial no histórico: ${historyError.message}`);
     }
 
-    return { status: 'inserted', data: inserted, shouldAlert: false };
+    return { status: 'inserted', data: inserted, shouldAlert: currentLevel === 'bug' };
   } else {
     // 3. Produto já existe
     const hasPriceChanged = Number(existing.current_price) !== Number(price);
@@ -106,7 +108,7 @@ export async function upsertProduct(product, store = 'amazon') {
     // Controle de Alertas Repetidos
     const levelRanks = { none: 0, great_opportunity: 1, bug: 2 };
     const oldLevel = existing.last_opportunity_level || 'none';
-    const currentLevel = detectOpportunity(price, Number(existing.reference_price));
+    const currentLevel = detectOpportunity(price, Number(existing.reference_price), product.originalPrice);
     const shouldAlert = levelRanks[currentLevel] > levelRanks[oldLevel];
 
     if (shouldAlert) {

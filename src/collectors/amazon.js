@@ -286,14 +286,33 @@ export async function collectAmazonProductDetails(page, url) {
       }
     }
 
-    return { name, priceText };
+    let originalPriceText = '';
+    const originalSelectors = [
+      '#corePriceDisplay_desktop_feature_div span.a-price.a-text-price span.a-offscreen',
+      '#corePrice_desktop span.a-price.a-text-price span.a-offscreen',
+      '.basisPrice .a-offscreen',
+      '#corePriceDisplay_desktop_feature_div .a-size-small.a-color-secondary.a-text-strike',
+      '#corePrice_feature_div .a-size-small.a-color-secondary.a-text-strike',
+      'span.a-text-strike'
+    ];
+    for (const selector of originalSelectors) {
+      const el = document.querySelector(selector);
+      if (el && el.textContent.trim()) {
+        originalPriceText = el.textContent.trim();
+        break;
+      }
+    }
+
+    return { name, priceText, originalPriceText };
   });
 
   const parsedPrice = parseBrazilianPrice(extracted.priceText);
+  const parsedOriginalPrice = parseBrazilianPrice(extracted.originalPriceText);
 
   return {
     name: extracted.name,
     price: parsedPrice,
+    originalPrice: parsedOriginalPrice,
     rawPrice: extracted.priceText,
     isBlocked: false,
     isUnavailable: isUnavailable && parsedPrice === null
