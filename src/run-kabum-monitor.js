@@ -68,7 +68,9 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
     navigationError: 0,
     unexpectedError: 0,
     durations: [],
-    failures: []
+    failures: [],
+    usedHttp: 0,
+    usedFallback: 0
   };
 
   let allProducts = [];
@@ -117,13 +119,6 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
   const concurrencyLimit = parseInt(process.env.KABUM_MONITOR_CONCURRENCY || '2', 10);
   console.log(`[INFO] Concorrência configurada: ${concurrencyLimit} workers`);
 
-  const browser = await chromium.launch({ headless: true });
-  const context = await browser.newContext({
-    viewport: { width: 1280, height: 800 },
-    locale: 'pt-BR',
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-  });
-
   let currentIndex = 0;
   const workers = [];
   const activeWorkersCount = Math.min(concurrencyLimit, products.length);
@@ -131,20 +126,35 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
   try {
     for (let w = 0; w < activeWorkersCount; w++) {
       workers.push((async (workerId) => {
-        let page = await context.newPage();
+        let workerBrowser = null;
+        let workerContext = null;
+        let workerPage = null;
         let productsProcessed = 0;
+
+        const getLazyPage = async () => {
+          if (!workerPage) {
+            console.log(`[Worker ${workerId}] Inicializando Chromium sob demanda para Fallback...`);
+            workerBrowser = await chromium.launch({ headless: true });
+            workerContext = await workerBrowser.newContext({
+              viewport: { width: 1280, height: 800 },
+              locale: 'pt-BR',
+              userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            });
+            workerPage = await workerContext.newPage();
+          }
+          return workerPage;
+        };
 
         try {
           while (true) {
             const index = currentIndex++;
             if (index >= products.length) break;
 
-            // Reciclagem de página periódica
-            if (productsProcessed > 0 && productsProcessed % 50 === 0) {
+            if (workerPage && productsProcessed > 0 && productsProcessed % 50 === 0) {
               const memory = process.memoryUsage();
               console.log(`[Worker ${workerId}][MEMÓRIA] Processados ${productsProcessed}. RSS: ${(memory.rss/1024/1024).toFixed(2)} MB. Reiniciando página...`);
-              await page.close();
-              page = await context.newPage();
+              await workerPage.close();
+              workerPage = await workerContext.newPage();
             }
 
             productsProcessed++;
@@ -154,9 +164,15 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
             console.log(`[Worker ${workerId}][${index + 1}/${products.length}] Monitorando ID: ${prod.external_id}`);
 
             try {
-              const details = await collectKaBuMProductDetails(page, prod.external_id);
+              const details = await collectKaBuMProductDetails(getLazyPage, prod.external_id);
               const duration = (Date.now() - prodStartTime) / 1000;
               stats.durations.push(duration);
+
+              if (details.usedHttp) {
+                stats.usedHttp++;
+              } else {
+                stats.usedFallback++;
+              }
 
               if (details.isBlocked) {
                 stats.blocked++;
@@ -172,9 +188,9 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
               }
 
               stats.success++;
-              console.log(`  ✔ [Worker ${workerId}][SUCESSO] De R$ ${prod.current_price} por R$ ${details.price} (Pix) | Duração: ${duration.toFixed(2)}s`);
+              const viaStr = details.usedHttp ? 'HTTP' : 'Fallback Playwright';
+              console.log(`  ✔ [Worker ${workerId}][SUCESSO] De R$ ${prod.current_price} por R$ ${details.price} (Pix) | Via: ${viaStr} | Duração: ${duration.toFixed(2)}s`);
 
-              // Atualizar no banco
               const upsertData = {
                 asin: prod.external_id,
                 name: details.name || prod.name,
@@ -198,16 +214,16 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
             }
           }
         } finally {
-          await page.close();
+          if (workerPage) await workerPage.close();
+          if (workerContext) await workerContext.close();
+          if (workerBrowser) await workerBrowser.close();
         }
       })(w + 1));
     }
 
     await Promise.all(workers);
-
-  } finally {
-    await context.close();
-    await browser.close();
+  } catch (err) {
+    console.error('Erro na execução dos workers:', err.message);
   }
 
   const totalDuration = ((Date.now() - startTime) / 1000).toFixed(2);
@@ -217,6 +233,8 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
   console.log(`- Indisponíveis: ${stats.unavailable}`);
   console.log(`- Bloqueados/WAF: ${stats.blocked}`);
   console.log(`- Erros: ${stats.unexpectedError}`);
+  console.log(`- Via HTTP Direto: ${stats.usedHttp}`);
+  console.log(`- Via Fallback Playwright: ${stats.usedFallback}`);
   console.log(`- Duração Total: ${totalDuration}s`);
   console.log('======================================\n');
 
