@@ -71,7 +71,10 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
     durations: [],
     failures: [],
     usedHttp: 0,
-    usedFallback: 0
+    usedFallback: 0,
+    priority1Count: 0,
+    priority2Count: 0,
+    priority3Count: 0
   };
 
   let allProducts = [];
@@ -102,7 +105,10 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
     return dateA - dateB;
   });
 
-  let products = eligibleEvaluated.map(e => e.product);
+  let products = eligibleEvaluated.map(e => ({
+    ...e.product,
+    priorityRank: e.evaluation.priorityRank
+  }));
   console.log(`[INFO] Elegíveis para monitorar: ${products.length} (Ignorados: ${ignoredCount})`);
 
   if (limit !== null) {
@@ -175,6 +181,10 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
                 stats.usedFallback++;
               }
 
+              if (prod.priorityRank === 3) stats.priority3Count++;
+              else if (prod.priorityRank === 2) stats.priority2Count++;
+              else stats.priority1Count++;
+
               if (details.isBlocked) {
                 stats.blocked++;
                 console.warn(`  ❌ [Worker ${workerId}][BLOQUEIO] WAF impediu a extração.`);
@@ -240,6 +250,7 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
   console.log(`- Duração Total: ${totalDuration}s`);
   console.log('======================================\n');
 
+  stats.catalogCount = allProducts.length;
   return stats;
 }
 
