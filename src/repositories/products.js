@@ -164,7 +164,7 @@ export async function upsertProduct(product, store = 'amazon') {
 
     return {
       status: hasPriceChanged ? 'price_changed' : 'updated',
-      data: updated,
+      data: { ...updated, originalPrice: product.originalPrice },
       shouldAlert
     };
   }
