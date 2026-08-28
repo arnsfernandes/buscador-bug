@@ -69,7 +69,8 @@ export async function upsertProduct(product, store = 'amazon') {
         consecutive_unavailable: 0,
         last_available_at: nowStr,
         last_opportunity_level: currentLevel,
-        image_url: product.imageUrl || null
+        image_url: product.imageUrl || null,
+        telegram_file_id: null
       })
       .select()
       .single();
@@ -106,7 +107,10 @@ export async function upsertProduct(product, store = 'amazon') {
     };
 
     if (product.imageUrl) {
-      updateFields.image_url = product.imageUrl;
+      if (product.imageUrl !== existing.image_url) {
+        updateFields.image_url = product.imageUrl;
+        updateFields.telegram_file_id = null;
+      }
     }
 
     if (hasPriceChanged) {
@@ -236,4 +240,25 @@ export async function registerProductUnavailability(asin, store = 'amazon') {
   }
 
   return updated;
+}
+
+/**
+ * Atualiza o telegram_file_id de um produto após envio de foto com sucesso no Telegram.
+ * @param {string} productId ID do produto
+ * @param {string} fileId ID do arquivo no Telegram
+ * @returns {Promise<Object>} Registro atualizado
+ */
+export async function updateTelegramFileId(productId, fileId) {
+  const { data, error } = await supabase
+    .from('products')
+    .update({ telegram_file_id: fileId })
+    .eq('id', productId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error(`Erro ao atualizar telegram_file_id para produto ${productId}:`, error.message);
+  }
+
+  return data;
 }

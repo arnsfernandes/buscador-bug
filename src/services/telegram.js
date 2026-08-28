@@ -60,6 +60,35 @@ export async function sendTelegramPhoto(photoUrl, captionText, replyMarkup = nul
 
   const url = `https://api.telegram.org/bot${botToken}/sendPhoto`;
 
+  const isFileId = !photoUrl.startsWith('http://') && !photoUrl.startsWith('https://');
+
+  if (isFileId) {
+    const payload = {
+      chat_id: chatId,
+      photo: photoUrl,
+      caption: captionText,
+      parse_mode: 'HTML'
+    };
+
+    if (replyMarkup) {
+      payload.reply_markup = replyMarkup;
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    if (!response.ok || !data.ok) {
+      throw new Error(`Erro na API do Telegram (sendPhoto com file_id): ${data.description || response.statusText}`);
+    }
+    return data;
+  }
+
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 4000); // Timeout de 4 segundos para download da imagem
 

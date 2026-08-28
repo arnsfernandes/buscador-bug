@@ -1,4 +1,5 @@
 import { sendTelegramMessage, sendTelegramPhoto } from './telegram.js';
+import { updateTelegramFileId } from '../repositories/products.js';
 
 /**
  * Formata um valor numérico como moeda brasileira (BRL).
@@ -80,13 +81,42 @@ export async function checkAndNotifyOpportunity(upsertResult) {
     ]
   };
 
+  // 1. Tentar enviar via telegram_file_id se ele existir no banco
+  if (data.telegram_file_id) {
+    try {
+      console.log(`[TELEGRAM-CACHE] Enviando foto usando cached file_id para produto ${data.id}...`);
+      return await sendTelegramPhoto(data.telegram_file_id, message, replyMarkup);
+    } catch (cacheErr) {
+      console.warn(`[TELEGRAM-CACHE] Falha ao enviar usando file_id cached (${data.telegram_file_id}): ${cacheErr.message}. Tentando via image_url...`);
+      // Se falhar o envio por file_id, tentaremos via image_url
+    }
+  }
+
+  // 2. Se não tinha file_id ou o envio com ele falhou, tentar por image_url
   if (data.image_url) {
     try {
-      return await sendTelegramPhoto(data.image_url, message, replyMarkup);
+      console.log(`[TELEGRAM-UPLOAD] Baixando e enviando imagem binária de ${data.image_url}...`);
+      const telegramResult = await sendTelegramPhoto(data.image_url, message, replyMarkup);
+      
+      // Salvar o file_id retornado no banco de dados
+      const photoArray = telegramResult?.result?.photo;
+      if (photoArray && photoArray.length > 0) {
+        const largestPhoto = photoArray[photoArray.length - 1];
+        if (largestPhoto?.file_id) {
+          console.log(`[TELEGRAM-CACHE] Salvando novo file_id para produto ${data.id}: ${largestPhoto.file_id}`);
+          try {
+            await updateTelegramFileId(data.id, largestPhoto.file_id);
+          } catch (dbErr) {
+            console.error('[TELEGRAM-CACHE] Erro ao salvar file_id no banco:', dbErr.message);
+          }
+        }
+      }
+      return telegramResult;
     } catch (err) {
       console.warn(`[TELEGRAM-FALLBACK] Erro ao enviar foto (${data.image_url}): ${err.message}. Fazendo fallback para texto.`);
     }
   }
 
+  // 3. Fallback final para texto simples
   return await sendTelegramMessage(message, replyMarkup);
 }
