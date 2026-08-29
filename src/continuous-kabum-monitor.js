@@ -1,7 +1,7 @@
 import dotenv from 'dotenv';
 import { runKaBuMMonitor } from './run-kabum-monitor.js';
 import { registerSuccess, registerFailure } from './repositories/service-health.js';
-import { saveCrawlerCycleLog, getCrawlerTuningState } from './repositories/crawler-tuning.js';
+import { saveCrawlerCycleLog, getCrawlerTuningState, updateCrawlerTuningState } from './repositories/crawler-tuning.js';
 
 dotenv.config();
 
@@ -40,9 +40,51 @@ async function executeCycle() {
   console.log(`------------------------------------------------------------`);
 
   let stats = null;
+  let isProbe = false;
+  let tuningState = null;
+
   try {
+    // 1. Obter estado atual de tuning do banco de dados
+    tuningState = await getCrawlerTuningState('kabum');
+    if (!tuningState) {
+      tuningState = await updateCrawlerTuningState('kabum', {
+        request_rate: 1,
+        target_revisit_minutes: 1,
+        last_stable_request_rate: 1,
+        healthy_streak: 0,
+        waf_streak: 0,
+        cooldown_until: null
+      });
+    }
+
+    // 2. Verificar se está em período de cooldown
+    if (tuningState.cooldown_until && new Date(tuningState.cooldown_until) > new Date()) {
+      console.log(`[COOLDOWN] Monitor em cooldown de WAF ativo até: ${new Date(tuningState.cooldown_until).toLocaleString()}. Pulando ciclo.`);
+      isRunning = false;
+      
+      // Registrar sucesso para manter a saúde do serviço ativa
+      try {
+        await registerSuccess('kabum-monitor');
+      } catch (dbErr) {}
+
+      const remainingMs = Math.max(60000, new Date(tuningState.cooldown_until).getTime() - Date.now());
+      console.log(`Próxima verificação de cooldown agendada para daqui a ${(remainingMs / 1000 / 60).toFixed(2)} minutos.`);
+      loopTimeout = setTimeout(executeCycle, Math.min(remainingMs, 5 * 60 * 1000)); // checar novamente ou no fim do cooldown ou em até 5min
+      return;
+    }
+
+    // 3. Execução
     const limit = process.env.MONITOR_LIMIT ? parseInt(process.env.MONITOR_LIMIT, 10) : null;
-    stats = await runKaBuMMonitor({ limit });
+
+    if (tuningState.waf_streak > 0) {
+      // Entramos no modo PROBE após término de cooldown
+      isProbe = true;
+      console.log(`[WAF-PROBE] Iniciando Probe de Recuperação de WAF (Testando 2 produtos via HTTP apenas)...`);
+      stats = await runKaBuMMonitor({ limit: 2, forceHttpOnly: true });
+    } else {
+      // Monitoramento normal
+      stats = await runKaBuMMonitor({ limit });
+    }
 
     const duration = ((Date.now() - cycleStartTime) / 1000).toFixed(2);
     console.log(`------------------------------------------------------------`);
@@ -52,6 +94,52 @@ async function executeCycle() {
     console.log(`  - Sucessos: ${stats.success}`);
     console.log(`  - Falhas (Bloqueios/Navegação/Inesperados): ${stats.blocked + stats.navigationError + stats.unexpectedError}`);
     console.log(`------------------------------------------------------------`);
+
+    // 4. Pós-processamento do resultado (State Machine)
+    if (isProbe) {
+      if (stats.success === 2) {
+        console.log(`[WAF-RECOVERY] Probe com sucesso! WAF liberado. Retomando monitor conservador a 0.5 req/s.`);
+        tuningState = await updateCrawlerTuningState('kabum', {
+          waf_streak: 0,
+          healthy_streak: 1,
+          cooldown_until: null,
+          request_rate: 0.5,
+          target_revisit_minutes: 5 // começar conservador com 5 min
+        });
+      } else {
+        const nextCooldown = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+        console.warn(`[WAF-RECOVERY] Probe falhou (${stats.success}/2 sucessos). WAF ainda ativo. Novo cooldown de 6 horas até ${new Date(nextCooldown).toLocaleString()}.`);
+        tuningState = await updateCrawlerTuningState('kabum', {
+          waf_streak: (tuningState.waf_streak || 0) + 1,
+          healthy_streak: 0,
+          cooldown_until: nextCooldown
+        });
+      }
+    } else {
+      // Ciclo normal
+      if (stats.aborted) {
+        const nextCooldown = new Date(Date.now() + 6 * 60 * 60 * 1000).toISOString();
+        console.error(`🚨 [WAF-SEVERE] WAF severo detectado. Abortando monitoramento e entrando em cooldown de 6 horas até ${new Date(nextCooldown).toLocaleString()}.`);
+        tuningState = await updateCrawlerTuningState('kabum', {
+          waf_streak: 1,
+          healthy_streak: 0,
+          cooldown_until: nextCooldown
+        });
+      } else {
+        // Ciclo saudável normal
+        const newHealthy = (tuningState.healthy_streak || 0) + 1;
+        let newRate = tuningState.request_rate || 1.0;
+        if (newHealthy >= 3 && newRate < 1.0) {
+          newRate = 1.0;
+          console.log(`[TUNING] 3 ciclos saudáveis consecutivos atingidos. Aumentando request_rate para 1.0 req/s.`);
+        }
+        tuningState = await updateCrawlerTuningState('kabum', {
+          healthy_streak: newHealthy,
+          request_rate: newRate,
+          cooldown_until: null
+        });
+      }
+    }
 
     try {
       await registerSuccess('kabum-monitor');
@@ -79,35 +167,40 @@ async function executeCycle() {
         console.log(`\n[LOOP-MONITOR-KABUM] Limite de ciclos atingido (${maxCycles} ciclos). Encerrando...`);
         process.exit(0);
       } else {
-        const durationSec = stats ? (Date.now() - cycleStartTime) / 1000 : 0;
-        const targetRevisitMin = stats ? calculateAdaptiveInterval(stats, durationSec) : 1;
-        const durationMin = durationSec / 60;
-        const sleepMin = Math.max(0, targetRevisitMin - durationMin);
-        const sleepMs = sleepMin * 60 * 1000;
-        const effectiveIntervalMin = durationMin + sleepMin;
+        // Agendar próximo ciclo
+        let sleepMs = 60000;
+        if (tuningState && tuningState.cooldown_until && new Date(tuningState.cooldown_until) > new Date()) {
+          sleepMs = Math.max(60000, new Date(tuningState.cooldown_until).getTime() - Date.now());
+        } else {
+          const durationSec = stats ? (Date.now() - cycleStartTime) / 1000 : 0;
+          const targetRevisitMin = tuningState?.target_revisit_minutes || (stats ? calculateAdaptiveInterval(stats, durationSec) : 1);
+          const durationMin = durationSec / 60;
+          const sleepMin = Math.max(0, targetRevisitMin - durationMin);
+          sleepMs = sleepMin * 60 * 1000;
 
-        console.log(`[ADAPTATIVE-FREQ] Agendamento do próximo ciclo:`);
-        console.log(`  - Duração do ciclo: ${durationSec.toFixed(1)}s (${durationMin.toFixed(2)} min)`);
-        console.log(`  - Target de revisita: ${targetRevisitMin} min`);
-        console.log(`  - Sleep calculado: ${(sleepMs / 1000).toFixed(1)}s (${sleepMin.toFixed(2)} min)`);
-        console.log(`  - Intervalo efetivo estimado: ${effectiveIntervalMin.toFixed(2)} min`);
+          // Atualizar o target adaptativo no banco se não estiver em probe/cooldown
+          if (stats && !isProbe && tuningState) {
+            const calculatedTarget = calculateAdaptiveInterval(stats, durationSec);
+            if (calculatedTarget !== tuningState.target_revisit_minutes) {
+              await updateCrawlerTuningState('kabum', { target_revisit_minutes: calculatedTarget });
+            }
+          }
+        }
 
-        // Salvar log do ciclo de forma assíncrona
+        // Salvar log do ciclo de forma assíncrona se tiver stats
         if (stats) {
           saveCrawlerCycleLog({
             store: 'kabum',
             startedAt: new Date(cycleStartTime),
             finishedAt: new Date(),
-            durationSec: durationSec,
+            durationSec: (Date.now() - cycleStartTime) / 1000,
             totalProcessed: stats.total || 0,
             successCount: stats.success || 0,
             errorCount: (stats.unexpectedError || 0) + (stats.navigationError || 0),
             wafCount: stats.blocked || 0,
             httpDirectCount: stats.usedHttp || 0,
             fallbackPlaywrightCount: stats.usedFallback || 0,
-            targetRevisitMinutes: targetRevisitMin
-          }).then(() => {
-            console.log(`[LOOP-MONITOR-KABUM] Métricas do ciclo salvas no banco de dados.`);
+            targetRevisitMinutes: tuningState?.target_revisit_minutes || 1
           }).catch(logErr => {
             console.error('[LOOP-MONITOR-KABUM] Falha ao salvar log de ciclo no banco:', logErr.message);
           });

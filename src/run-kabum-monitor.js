@@ -52,9 +52,10 @@ export async function getKaBuMProductsFromDb() {
  * Executa o ciclo de monitoramento direto para os produtos da KaBuM!.
  * @param {Object} options
  * @param {number|null} options.limit Limite de produtos para processar (null para todos)
+ * @param {boolean} options.forceHttpOnly Se true, desativa o fallback Playwright
  * @returns {Promise<Object>} Estatísticas da execução
  */
-export async function runKaBuMMonitor({ limit = null } = {}) {
+export async function runKaBuMMonitor({ limit = null, forceHttpOnly = false } = {}) {
   // 0. Verificar se o conector está ativo
   if (!(await isConnectorActive(SOURCE))) {
     console.log(`[INFO] Conector "${SOURCE}" está inativo no banco de dados. Pulando monitoramento.`);
@@ -78,13 +79,22 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
     usedFallback: 0,
     priority1Count: 0,
     priority2Count: 0,
-    priority3Count: 0
+    priority3Count: 0,
+    aborted: false
   };
 
   let allProducts = [];
+  let delayMs = 0;
   try {
     allProducts = await getKaBuMProductsFromDb();
     console.log(`[INFO] Carregados ${allProducts.length} produtos conhecidos da KaBuM! do banco.`);
+    
+    // Obter taxa de requisição e calcular delayMs
+    const { getCrawlerTuningState } = await import('./repositories/crawler-tuning.js');
+    const tuningState = await getCrawlerTuningState(SOURCE);
+    const rate = tuningState?.request_rate || 1;
+    delayMs = rate > 0 ? (1 / rate) * 1000 : 0;
+    console.log(`[INFO] Taxa de requisições: ${rate} req/s | Delay entre requisições: ${delayMs}ms`);
   } catch (error) {
     console.error('Erro fatal ao iniciar monitoramento KaBuM!:', error.message);
     return stats;
@@ -131,6 +141,8 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
   console.log(`[INFO] Concorrência configurada: ${concurrencyLimit} workers`);
 
   let currentIndex = 0;
+  let abortCycle = false;
+  let consecutiveBlocks = 0;
   const workers = [];
   const activeWorkersCount = Math.min(concurrencyLimit, products.length);
 
@@ -158,6 +170,11 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
 
         try {
           while (true) {
+            if (abortCycle) {
+              console.warn(`[Worker ${workerId}] Ciclo abortado devido a WAF severo detectado.`);
+              break;
+            }
+
             const index = currentIndex++;
             if (index >= products.length) break;
 
@@ -174,8 +191,12 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
 
             console.log(`[Worker ${workerId}][${index + 1}/${products.length}] Monitorando ID: ${prod.external_id}`);
 
+            if (delayMs > 0) {
+              await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+
             try {
-              const details = await collectKaBuMProductDetails(getLazyPage, prod.external_id);
+              const details = await collectKaBuMProductDetails(getLazyPage, prod.external_id, forceHttpOnly);
               const duration = (Date.now() - prodStartTime) / 1000;
               stats.durations.push(duration);
 
@@ -191,9 +212,16 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
 
               if (details.isBlocked) {
                 stats.blocked++;
+                consecutiveBlocks++;
                 console.warn(`  ❌ [Worker ${workerId}][BLOQUEIO] WAF impediu a extração.`);
+                if (consecutiveBlocks >= 5) {
+                  console.error(`🚨 [WAF-SEVERE] Detectados ${consecutiveBlocks} bloqueios consecutivos. Abortando ciclo imediatamente.`);
+                  abortCycle = true;
+                }
                 continue;
               }
+
+              consecutiveBlocks = 0;
 
               if (details.isUnavailable || details.price === null) {
                 stats.unavailable++;
@@ -255,6 +283,7 @@ export async function runKaBuMMonitor({ limit = null } = {}) {
   console.log('======================================\n');
 
   stats.catalogCount = allProducts.length;
+  stats.aborted = abortCycle;
   return stats;
 }
 

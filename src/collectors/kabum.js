@@ -104,7 +104,7 @@ export async function collectKaBuMProducts(searchTerm, pageNumber = 1, existingP
  * @param {string|number} codeOrUrl Código do produto (ID) ou URL completa.
  * @returns {Promise<{ name: string, price: number|null, originalPrice: number|null, imageUrl: string|null, isBlocked: boolean, isUnavailable: boolean }>}
  */
-export async function collectKaBuMProductDetails(page, codeOrUrl) {
+export async function collectKaBuMProductDetails(page, codeOrUrl, forceHttpOnly = false) {
   const code = String(codeOrUrl).match(/^\d+$/) ? String(codeOrUrl) : String(codeOrUrl).match(/\/produto\/(\d+)/)?.[1];
   if (!code) {
     throw new Error(`Código do produto inválido ou não parseado: ${codeOrUrl}`);
@@ -165,6 +165,10 @@ export async function collectKaBuMProductDetails(page, codeOrUrl) {
   }
 
   // 2. Fallback para Playwright
+  if (forceHttpOnly) {
+    return { name: '', price: null, originalPrice: null, imageUrl: null, isBlocked: true, isUnavailable: false, usedHttp: false };
+  }
+
   console.log(`[HTTP Direct Fallback] Ativando fallback Playwright para o produto ${code}...`);
 
   let activePage = page;
