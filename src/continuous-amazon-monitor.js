@@ -31,6 +31,11 @@ async function executeCycle() {
   console.log(`[LOOP-MONITOR] Iniciando ciclo de monitoramento: ${new Date().toLocaleString()}`);
   console.log(`------------------------------------------------------------`);
 
+  const watchdog = setTimeout(() => {
+    console.error('🚨 [WATCHDOG] Ciclo de monitoramento Amazon travado por mais de 45 minutos. Encerrando processo para reiniciar via systemd.');
+    process.exit(1);
+  }, 45 * 60 * 1000);
+
   try {
     const limit = process.env.MONITOR_LIMIT ? parseInt(process.env.MONITOR_LIMIT, 10) : null;
     const stats = await runAmazonMonitor({ limit, mockTelegram });
@@ -65,6 +70,7 @@ async function executeCycle() {
       console.error('[LOOP-MONITOR] Falha ao registrar falha na tabela de saúde:', dbErr.message);
     }
   } finally {
+    clearTimeout(watchdog);
     isRunning = false;
     if (!shutdownSignaled) {
       const maxCycles = process.env.MAX_MONITOR_CYCLES ? parseInt(process.env.MAX_MONITOR_CYCLES) : Infinity;

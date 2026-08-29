@@ -3,6 +3,7 @@ import { collectAmazonProductDetails } from './collectors/amazon.js';
 import { upsertProduct, registerProductUnavailability, supabase } from './repositories/products.js';
 import { isConnectorActive } from './repositories/config.js';
 import { checkAndNotifyOpportunity } from './services/opportunity-notifier.js';
+import { closeWithTimeout, closeBrowserWithTimeout } from './utils/playwright-helper.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -258,7 +259,7 @@ export async function runAmazonMonitor({ limit = null, mockTelegram = false } = 
               const heapUsedMb = (memory.heapUsed / 1024 / 1024).toFixed(2);
               console.log(`[Worker ${workerId}][MEMÓRIA] Processados ${productsProcessed} itens. RSS: ${rssMb} MB | Heap: ${heapUsedMb} MB. Recriando página...`);
               try {
-                await page.close();
+                await closeWithTimeout(page);
               } catch (closeErr) {
                 console.error(`[Worker ${workerId}][ERRO] Falha ao fechar página:`, closeErr.message);
               }
@@ -353,7 +354,7 @@ export async function runAmazonMonitor({ limit = null, mockTelegram = false } = 
             }
           }
         } finally {
-          await page.close();
+          await closeWithTimeout(page);
         }
       })(w + 1));
     }
@@ -361,8 +362,8 @@ export async function runAmazonMonitor({ limit = null, mockTelegram = false } = 
     await Promise.all(workers);
 
   } finally {
-    await context.close();
-    await browser.close();
+    await closeWithTimeout(context);
+    await closeBrowserWithTimeout(browser);
   }
 
 

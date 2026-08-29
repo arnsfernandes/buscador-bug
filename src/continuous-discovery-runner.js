@@ -32,6 +32,11 @@ async function executeLoop() {
   console.log(`[LOOP-DESCOBERTA] Iniciando ciclo de descoberta: ${new Date().toLocaleString()}`);
   console.log(`------------------------------------------------------------`);
 
+  const watchdog = setTimeout(() => {
+    console.error('🚨 [WATCHDOG] Ciclo de descoberta Amazon travado por mais de 25 minutos. Encerrando processo para reiniciar via systemd.');
+    process.exit(1);
+  }, 25 * 60 * 1000);
+
   try {
     await runAmazonDiscovery();
     const duration = ((Date.now() - cycleStartTime) / 1000).toFixed(2);
@@ -58,6 +63,7 @@ async function executeLoop() {
       console.error('[LOOP-DESCOBERTA] Falha ao registrar falha na tabela de saúde:', dbErr.message);
     }
   } finally {
+    clearTimeout(watchdog);
     isRunning = false;
     if (!shutdownSignaled) {
       const maxCycles = process.env.MAX_DISCOVERY_CYCLES ? parseInt(process.env.MAX_DISCOVERY_CYCLES) : Infinity;

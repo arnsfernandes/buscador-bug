@@ -2,6 +2,7 @@ import { chromium } from 'playwright';
 import { collectAmazonProducts } from './collectors/amazon.js';
 import { upsertProduct, supabase } from './repositories/products.js';
 import { isConnectorActive, listDiscoveryTerms } from './repositories/config.js';
+import { closeWithTimeout, closeBrowserWithTimeout } from './utils/playwright-helper.js';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -212,7 +213,7 @@ export async function runAmazonDiscovery({ terms = null, pagesPerRun = PAGES_PER
           
           // Fecha a página atual travada e cria uma nova para o próximo termo limpar estado
           try {
-            await page.close();
+            await closeWithTimeout(page);
             page = await context.newPage();
             console.log(`  [INFO] Página de navegação reiniciada para recuperação de erros.`);
           } catch (pageErr) {
@@ -241,9 +242,9 @@ export async function runAmazonDiscovery({ terms = null, pagesPerRun = PAGES_PER
       console.log(`📊 Termo "${term}" finalizado em ${termDuration}s. Novos cadastrados: ${summary[term].new}.`);
     }
   } finally {
-    if (page) await page.close();
-    if (context) await context.close();
-    if (browser) await browser.close();
+    if (page) await closeWithTimeout(page);
+    if (context) await closeWithTimeout(context);
+    if (browser) await closeBrowserWithTimeout(browser);
   }
 
   const totalDuration = ((Date.now() - startTime) / 1000).toFixed(2);
