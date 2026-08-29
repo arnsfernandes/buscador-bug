@@ -190,6 +190,8 @@ export async function runAmazonDiscovery({ terms = null, pagesPerRun = PAGES_PER
           console.log(`      - Encontrados: ${products.length} | Novos: ${pageInsertedCount} | Conhecidos: ${knownProducts.length} | Descartados: ${discarded.length}`);
           console.log(`      - Duração da página: ${pageDuration}s`);
 
+          globalThis.lastAmazonDiscoveryProgressAt = Date.now();
+
           // Atualiza a última página processada no banco a cada página de sucesso
           const { error: updateError } = await supabase
             .from('discovery_state')

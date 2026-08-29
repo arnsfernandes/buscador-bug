@@ -18,6 +18,21 @@ let isRunning = false;
 let loopTimeout = null;
 let shutdownSignaled = false;
 
+// Watchdog de Inatividade / Falta de Progresso Real (5 minutos)
+globalThis.lastAmazonDiscoveryProgressAt = Date.now();
+setInterval(() => {
+  if (isRunning) {
+    const inactiveMs = Date.now() - globalThis.lastAmazonDiscoveryProgressAt;
+    if (inactiveMs > 5 * 60 * 1000) {
+      console.error(`🚨 [WATCHDOG-INATIVIDADE] Descoberta Amazon sem progresso real por ${(inactiveMs / 1000 / 60).toFixed(1)} minutos.`);
+      console.error(`  - Último progresso registrado: ${new Date(globalThis.lastAmazonDiscoveryProgressAt).toLocaleString()}`);
+      console.error(`  - Tempo parado: ${(inactiveMs / 1000).toFixed(1)}s`);
+      console.error(`  - Motivo: Falta de progresso real na extração de páginas.`);
+      process.exit(1);
+    }
+  }
+}, 10 * 1000);
+
 async function executeLoop() {
   if (shutdownSignaled) return;
   

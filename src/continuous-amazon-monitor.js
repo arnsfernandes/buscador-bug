@@ -17,6 +17,21 @@ let isRunning = false;
 let loopTimeout = null;
 let shutdownSignaled = false;
 
+// Watchdog de Inatividade / Falta de Progresso Real (5 minutos)
+globalThis.lastAmazonMonitorProgressAt = Date.now();
+setInterval(() => {
+  if (isRunning) {
+    const inactiveMs = Date.now() - globalThis.lastAmazonMonitorProgressAt;
+    if (inactiveMs > 5 * 60 * 1000) {
+      console.error(`🚨 [WATCHDOG-INATIVIDADE] Monitor Amazon sem progresso real por ${(inactiveMs / 1000 / 60).toFixed(1)} minutos.`);
+      console.error(`  - Último progresso registrado: ${new Date(globalThis.lastAmazonMonitorProgressAt).toLocaleString()}`);
+      console.error(`  - Tempo parado: ${(inactiveMs / 1000).toFixed(1)}s`);
+      console.error(`  - Motivo: Falta de progresso real na coleta de produtos.`);
+      process.exit(1);
+    }
+  }
+}, 10 * 1000);
+
 async function executeCycle() {
   if (shutdownSignaled) return;
 

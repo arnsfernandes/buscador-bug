@@ -351,6 +351,8 @@ export async function runAmazonMonitor({ limit = null, mockTelegram = false } = 
                 console.error(`  ❌ [Worker ${workerId}][ERRO INESPERADO] Falha no processamento:`, err.stack || err.message);
                 stats.failures.push({ asin: prod.external_id, type: 'Inesperado', error: err.message });
               }
+            } finally {
+              globalThis.lastAmazonMonitorProgressAt = Date.now();
             }
           }
         } finally {
