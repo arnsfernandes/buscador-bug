@@ -10,8 +10,10 @@ dotenv.config();
 
 const SOURCE = 'kabum';
 
+import { isVideoCard } from './services/opportunity-notifier.js';
+
 /**
- * Busca todos os produtos da KaBuM! cadastrados no banco usando paginação.
+ * Busca todos os produtos da KaBuM! cadastrados no banco usando paginação e filtra placas de vídeo.
  * @returns {Promise<Array>}
  */
 export async function getKaBuMProductsFromDb() {
@@ -41,7 +43,9 @@ export async function getKaBuMProductsFromDb() {
     }
   }
 
-  return allProducts;
+  // Filtrar placas de vídeo para deixar fora do monitoramento
+  const filtered = allProducts.filter(p => !isVideoCard(p.name));
+  return filtered;
 }
 
 /**

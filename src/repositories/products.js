@@ -149,13 +149,11 @@ export async function upsertProduct(product, store = 'amazon', isDiscovery = fal
 
     // Controle de Alertas Repetidos
     const levelRanks = { none: 0, great_opportunity: 1, bug: 2 };
-    const oldLevel = existing.last_opportunity_level || 'none';
+    const oldNotifiedLevel = existing.last_notified_opportunity_level || 'none';
     const currentLevel = detectOpportunity(price, Number(existing.reference_price), product.originalPrice);
-    const shouldAlert = levelRanks[currentLevel] > levelRanks[oldLevel];
+    const shouldAlert = levelRanks[currentLevel] > levelRanks[oldNotifiedLevel];
 
-    if (shouldAlert) {
-      updateFields.last_opportunity_level = currentLevel;
-    }
+    updateFields.last_opportunity_level = currentLevel;
 
     const { data: updated, error: updateError } = await supabase
       .from('products')
@@ -286,6 +284,27 @@ export async function updateTelegramFileId(productId, fileId) {
 
   if (error) {
     console.error(`Erro ao atualizar telegram_file_id para produto ${productId}:`, error.message);
+  }
+
+  return data;
+}
+
+/**
+ * Atualiza o last_notified_opportunity_level de um produto após envio de alerta com sucesso.
+ * @param {string} productId ID do produto
+ * @param {string} level Nível notificado
+ * @returns {Promise<Object>} Registro atualizado
+ */
+export async function updateNotifiedLevel(productId, level) {
+  const { data, error } = await supabase
+    .from('products')
+    .update({ last_notified_opportunity_level: level })
+    .eq('id', productId)
+    .select()
+    .single();
+
+  if (error) {
+    console.error(`Erro ao atualizar last_notified_opportunity_level para produto ${productId}:`, error.message);
   }
 
   return data;
